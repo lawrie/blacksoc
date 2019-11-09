@@ -1,0 +1,32 @@
+
+	# constants
+	ldi r15, 1
+	ldi r13, 7
+
+	# LED status
+	ldi r1, 1
+
+main_loop:
+	# update LEDs
+	ldi r14, 255
+	io0 r14, r1
+
+	# wait 10 MEG cycles
+	ldi r3, 100
+outer_loop:
+	ldi r2, 100
+inner_loop:
+	sync 1000
+	sub r2, r15
+	bnz inner_loop
+	nop
+	sub r3, r15
+	bnz outer_loop
+	nop
+
+	# shift active LED
+	shl r0, r1, r15
+	shr r1, r13
+	b main_loop
+	or r1, r0
+

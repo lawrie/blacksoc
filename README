@@ -1,0 +1,113 @@
+
+      ***************************************************************
+      * BlackSoC -- A PicoRV32-based SoC generator for the BlackIce *
+      ***************************************************************
+
+
+The Blackice II is an ICE40 HX4k fpga but running as HX8K
+wnen programmed using the IceStorm Open Source FPGA flow:
+
+http://mystorm.uk/
+http://www.clifford.at/icestorm/
+
+BlackSoC is based on IcoSoC for the IcoBoard.
+
+This SoC generator creates SoCs using the PicoRV32 processor core that run on
+the Blackice II. Multiple IO standard interfaces are supported. The SoC has a
+console interface to the host PC. 
+
+Simply change into one of the examples/* directories and run "make run" to
+build and upload a SoC hardware/software bundle. You'll need the iCE40 and
+RISC-V toolchains installed on your system, as outlined below.
+
+
+Installing the IceStorm Flow
+============================
+
+The IceStorm flow consists of the IceStorm Tools, Arachne-PNR, and Yosys.
+Follow the instructions on the mystorm github Wiki to build the flow:
+
+	https://github.com/mystorm-org/BlackIce-II/wiki/Getting-Started
+
+
+Installing the RISC-V Toolchain
+===============================
+
+Follow the instructions in the PicoRV32 documentation:
+https://github.com/cliffordwolf/picorv32#building-a-pure-rv32i-toolchain
+
+BlackSoC can be configured with different ISA features (with and without
+compressed ISA, with or without multiply/divide instructions). To support
+all variations, different compiler toolchains must be built. To build all
+of them simply run:
+
+	git clone git@github.com:cliffordwolf/picorv32.git
+	cd picorv32
+	make download-tools
+	make -j$(nproc) build-tools
+
+
+BlackSoc Configuration File Format
+==================================
+
+See examples/ for some example SoCs. Each BlackSoC project has a Makefile
+that includes icosoc.mk, has a rule to create it using icosoc.py, and
+has a rule to build an appimage.hex file. It also must have an icosoc.cfg
+file that configures the SoC.
+
+Use examples/hello/Makefile and examples/hello/icosoc.cfg as a templates.
+
+The icosoc.cfg file has a "global section" that contains statements that
+configure the overall SoC, and "module sections" for each peripheral module.
+
+
+BlackSoC Global Config Section
+==============================
+
+The following statements are supported in the global section:
+
+board <board_name>
+------------------
+
+Sets the board type. Currently supported values are "blackice2".
+
+compressed_isa
+--------------
+
+Enable support for the RISC-V Compressed ISA. This will result in smaller
+application images, but require more FPGA resources for the processor core.
+
+muldiv_isa
+----------
+
+Enable support for multiply/divide instructions. This will significantly
+increase the size of the processor core.
+
+BlackSoc Module Sections
+========================
+
+A module section starts with "mod <mod_type> <mod_name>". See the mod_*
+directories in this directory for supported module types. The <mod_name>
+can be any identifier. For example consider the following module section:
+
+	mod gpio leds
+	  address 4
+	  connect IO pmod2 pmod1
+
+This will create a GPIO controller named "leds". The register file for
+that controller starts at 0x20040000 (0x20000000 + <addr> * 0x10000).
+
+The port IO of the peripheral is connected to the pins of the PMOD ports
+number 2 and 1. (The name "IO" is specific to the module type. The module
+type "gpio" only specifies a port "IO".)
+
+This will also create functions for accessing that peripheral module
+in icosoc.h and icosoc.c. The prefix "icosoc_<mod_name>_" is used for
+the function names.
+
+BlackSoc follows some of the conventions of IcoSoc, so that examples will 
+work with minimal changes. Pmods are all double ones and there are five of 
+them corresponding to pmod3/4, pmod 5/6, pmod 7/8, pmod 9/10 and pmod 11/12 
+on Blackice II.  For example BlackSoc pmod1 corresponds to BlackIce pmod 3/4. 
+(BlackIce pmod 1/2 is excluded as it includes the uart pins). Other 
+BlackIce II pins can be referred to as Pn, where n is the pin number. 
