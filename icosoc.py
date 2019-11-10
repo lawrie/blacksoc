@@ -55,14 +55,16 @@ def setboard(boardname):
 
     board = boardname
 
-    if boardname == "blackice2":
+    if boardname == "blackicemx":
         pmod_locs = [
-            "105 102 99 97 104 101 98 96".split(),
-            "143 114 112 107 144 113 110 106".split(),
-            "10 9 2 1 8 7 4 3".split(),
-            "20 19 16 15 18 17 12 11".split(),
-            "34 33 22 21 32 31 26 25".split(),
+            "21 22 25 26 19 20 23 24".split(),
+            "104 102 49 52 106 105 101 99".split(),
+            "143 144 3 4 1 2 7 8".split(),
+            "141 142 138 139 136 137 134 135".split(),
+            "16 15 10 9 18 17 12 11".split(),
+            "34 33 29 28 38 37 32 31".split(),
         ]
+
 
     else:
         assert False
@@ -103,7 +105,7 @@ def make_pins(pname):
     icosoc_pcf["12-iopins"].append("set_io %s %s" % (pname, ploc))
     return [ pname ]
 
-setboard("blackice2")
+setboard("blackicemx")
 
 def parse_cfg(f):
     global enable_compressed_isa
@@ -293,38 +295,43 @@ icosoc_v["20-clockgen"].append("""
     assign clk = r_clk, clk90 = r_clk90;
     assign pll_locked = 1;
 `else
-    wire clk_100mhz, pll1_locked, pll2_locked;
+    wire clk_25mhz, pll1_locked, pll2_locked;
     assign pll_locked = pll1_locked && pll2_locked;
-    assign clk_100mhz = CLKIN;
+    assign clk_25mhz = CLKIN;
     assign pll1_locked = 1;
 
-    SB_PLL40_2F_CORE #(
-        .FEEDBACK_PATH("PHASE_AND_DELAY"),
-        .DELAY_ADJUSTMENT_MODE_FEEDBACK("FIXED"),
-        .DELAY_ADJUSTMENT_MODE_RELATIVE("FIXED"),
-        .PLLOUT_SELECT_PORTA("SHIFTREG_0deg"),
-        .PLLOUT_SELECT_PORTB("SHIFTREG_90deg"),
-        .SHIFTREG_DIV_MODE(1'b0),
-        .FDA_FEEDBACK(4'b1111),
-        .FDA_RELATIVE(4'b1111),
-        .DIVR(4'b0100),
-        .DIVF(7'b0000000),
-        .DIVQ(3'b101),
-        .FILTER_RANGE(3'b111)
-    ) pll2 (
-        .REFERENCECLK   (clk_100mhz   ),
-        .PLLOUTGLOBALA  (clk          ),
-        .PLLOUTGLOBALB  (clk90        ),
-        .LOCK           (pll2_locked  ),
-        .BYPASS         (1'b0         ),
-        .RESETB         (1'b1         )
-    );
+    /**
+     * PLL configuration
+     *
+     * This Verilog module was generated automatically
+     * using the icepll tool from the IceStorm project.
+     * Use at your own risk.
+     *
+     * Given input frequency:        25.000 MHz
+     * Requested output frequency:   20.000 MHz
+     * Achieved output frequency:    19.922 MHz
+     */
+
+    SB_PLL40_CORE #(
+                .FEEDBACK_PATH("SIMPLE"),
+                .DIVR(4'b0001),         // DIVR =  1
+                .DIVF(7'b0110010),      // DIVF = 50
+                .DIVQ(3'b101),          // DIVQ =  5
+                .FILTER_RANGE(3'b001)   // FILTER_RANGE = 1
+        ) pll2 (
+                .LOCK(pll2_locked),
+                .RESETB(1'b1),
+                .BYPASS(1'b0),
+                .REFERENCECLK(clk_25mhz),
+                .PLLOUTCORE(clk)
+                );
+
 `endif
 
     // -------------------------------
     // Reset Generator
 
-    reg [7:0] resetn_counter = 0;
+    reg [10:0] resetn_counter = 0;
     wire resetn = &resetn_counter;
 
     always @(posedge clk) begin
@@ -335,60 +342,48 @@ icosoc_v["20-clockgen"].append("""
     end
 """)
 
-icosoc_v["30-sramif"].append("""
+icosoc_v["30-sdramif"].append("""
     // -------------------------------
-    // SRAM Interface
+    // SDRAM Interface
 
-    reg [1:0] sram_state;
-    reg sram_wrlb, sram_wrub;
-    reg [17:0] sram_addr;
-    reg [15:0] sram_dout;
-    wire [15:0] sram_din;
+    sdram #(.CLOCK_FREQ_HZ(20000000)
+        ) sdram_memory (
+                .clk            (clk            ),
+                .resetn         (resetn         ),
+                .mem_valid      (mem_valid && mem_addr < 4*MEM_WORDS),
+                .mem_addr       (mem_addr       ),
+                .mem_wdata      (mem_wdata      ),
+                .mem_rdata      (ram_rdata      ),
+                .mem_wstrb      (mem_wstrb      ),
+                .mem_ready      (ram_ready      ),
+                .o_ram_clk      (SDRAM_CLK      ),
+                .o_ram_cke      (SDRAM_CKE      ),
+                .o_ram_cs_n     (SDRAM_CS       ),
+                .o_ram_cas_n    (SDRAM_CAS      ),
+                .o_ram_ras_n    (SDRAM_RAS      ),
+                .o_ram_we_n     (SDRAM_WE       )  ,
+                .o_ram_addr     ({SDRAM_A11, SDRAM_A10, SDRAM_A9, SDRAM_A8, SDRAM_A7, SDRAM_A6, SDRAM_A5, SDRAM_A4, SDRAM_A3, SDRAM_A2, SDRAM_A1, SDRAM_A0}),
+                .o_ram_udqm     (SDRAM_UB     ),
+                .o_ram_ldqm     (SDRAM_LB     ),
+                .io_ram_data    ({SDRAM_D15, SDRAM_D14, SDRAM_D13, SDRAM_D12, SDRAM_D11, SDRAM_D10, SDRAM_D9, SDRAM_D8, SDRAM_D7, SDRAM_D6, SDRAM_D5, SDRAM_D4, SDRAM_D3, SDRAM_D2, SDRAM_D1, SDRAM_D0} )
+        );
 
-    SB_IO #(
-        .PIN_TYPE(6'b 1010_01),
-        .PULLUP(1'b 0)
-    ) sram_io [15:0] (
-        .PACKAGE_PIN({SRAM_D15, SRAM_D14, SRAM_D13, SRAM_D12, SRAM_D11, SRAM_D10, SRAM_D9, SRAM_D8,
-                      SRAM_D7, SRAM_D6, SRAM_D5, SRAM_D4, SRAM_D3, SRAM_D2, SRAM_D1, SRAM_D0}),
-        .OUTPUT_ENABLE(sram_wrlb || sram_wrub),
-        .D_OUT_0(sram_dout),
-        .D_IN_0(sram_din)
-    );
-""")
 
-icosoc_v["30-sramif"].append("""
-    assign {SRAM_A17, SRAM_A16, SRAM_A15, SRAM_A14, SRAM_A13, SRAM_A12, SRAM_A11, SRAM_A10, SRAM_A9, SRAM_A8,
-            SRAM_A7, SRAM_A6, SRAM_A5, SRAM_A4, SRAM_A3, SRAM_A2, SRAM_A1, SRAM_A0} = sram_addr;
-
-    assign SRAM_CE = 0;
-    assign SRAM_WE = (sram_wrlb || sram_wrub) ? !clk90 : 1;
-    assign SRAM_OE = (sram_wrlb || sram_wrub);
-    assign SRAM_LB = (sram_wrlb || sram_wrub) ? !sram_wrlb : 0;
-    assign SRAM_UB = (sram_wrlb || sram_wrub) ? !sram_wrub : 0;
 """)
 
 icosoc_v["30-uart"].append("""
     // -------------------------------
-    wire tx_req;
+    reg  tx_req;
     wire tx_ready;
-    wire [7:0] tx_data;
+    reg  [7:0] tx_data;
 
     wire rx_req;
-    wire rx_ready;
+    reg  rx_ready;
     wire [7:0] rx_data;
-
-    wire reset_;
-
-    sync_reset u_sync_reset(
-        .clk(clk),
-        .reset_in_(!GRESET),
-        .reset_out_(reset_)
-    );
 
     uart_rx #(.BAUD(115200)) u_uart_rx (
         .clk (clk),
-        .reset_(reset_),
+        .reset_(1),
         .rx_req(rx_req),
         .rx_ready(rx_ready),
         .rx_data(rx_data),
@@ -402,7 +397,7 @@ icosoc_v["30-uart"].append("""
     // right value.
     uart_tx #(.BAUD(115200)) u_uart_tx (
         .clk (clk),
-        .reset_(reset_),
+        .reset_(1),
         .tx_req(tx_req),
         .tx_ready(tx_ready),
         .tx_data(tx_data),
@@ -549,11 +544,6 @@ icosoc_v["70-bus"].append("""
 
     always @(posedge clk) begin
         mem_ready <= 0;
-        sram_state <= 0;
-        sram_wrlb <= 0;
-        sram_wrub <= 0;
-        sram_addr <= 'bx;
-        sram_dout <= 'bx;
 """)
 
 icosoc_v["72-bus"].append("""
@@ -566,8 +556,6 @@ icosoc_v["72-bus"].append("""
         if (!resetn) begin
             LED1 <= 0;
             LED2 <= 0;
-            LED3 <= 0;
-            LED4 <= 0;
 
         end else
         if (mem_valid && !mem_ready) begin
@@ -585,51 +573,13 @@ icosoc_v["72-bus"].append("""
                     mem_ready <= 1;
                 end
                 (mem_addr & 32'hF000_0000) == 32'h0000_0000 && (mem_addr >> 2) >= BOOT_MEM_SIZE: begin
-                    if (mem_wstrb) begin
-                        (* parallel_case, full_case *)
-                        case (sram_state)
-                            0: begin
-                                sram_addr <= {mem_addr >> 2, 1'b0};
-                                sram_dout <= mem_wdata[15:0];
-                                sram_wrlb <= mem_wstrb[0];
-                                sram_wrub <= mem_wstrb[1];
-                                sram_state <= 1;
-                            end
-                            1: begin
-                                sram_addr <= {mem_addr >> 2, 1'b1};
-                                sram_dout <= mem_wdata[31:16];
-                                sram_wrlb <= mem_wstrb[2];
-                                sram_wrub <= mem_wstrb[3];
-                                sram_state <= 0;
-                                mem_ready <= 1;
-                            end
-                        endcase
-                    end else begin
-                        (* parallel_case, full_case *)
-                        case (sram_state)
-                            0: begin
-                                sram_addr <= {mem_addr >> 2, 1'b0};
-                                sram_state <= 1;
-                            end
-                            1: begin
-                                sram_addr <= {mem_addr >> 2, 1'b1};
-                                mem_rdata[15:0] <= sram_din;
-                                sram_state <= 2;
-                            end
-                            2: begin
-                                mem_rdata[31:16] <= sram_din;
-                                sram_state <= 0;
-                                mem_ready <= 1;
-                            end
-                        endcase
-                    end
                 end
                 (mem_addr & 32'hF000_0000) == 32'h2000_0000: begin
                     mem_ready <= 1;
                     mem_rdata <= 0;
                     if (mem_wstrb) begin
                         if (mem_addr[23:16] == 0) begin
-                            if (mem_addr[7:0] == 8'h 00) {LED4, LED3, LED2, LED1} <= mem_wdata;
+                            if (mem_addr[7:0] == 8'h 00) {LED2, LED1} <= mem_wdata;
                         end
 """)
 
@@ -637,9 +587,9 @@ icosoc_v["74-bus"].append("""
                     end else begin
                         if (mem_addr[23:16] == 0) begin
 `ifdef TESTBENCH
-                            if (mem_addr[7:0] == 8'h 00) mem_rdata <= {LED4, LED3, LED2, LED1} | 32'h8000_0000;
+                            if (mem_addr[7:0] == 8'h 00) mem_rdata <= {LED2, LED1} | 32'h8000_0000;
 `else
-                            if (mem_addr[7:0] == 8'h 00) mem_rdata <= {LED4, LED3, LED2, LED1};
+                            if (mem_addr[7:0] == 8'h 00) mem_rdata <= {LED2, LED1};
 `endif
                         end
 """)
@@ -673,86 +623,79 @@ icosoc_v["78-bus"].append("""
 """)
 
 icosoc_v["10-moddecl"].append("module icosoc (")
-icosoc_v["10-moddecl"].append("    input CLKIN, GRESET, RX,")
-icosoc_v["10-moddecl"].append("    output reg LED1, LED2, LED3, LED4, TX,")
+icosoc_v["10-moddecl"].append("    input CLKIN, RX,")
+icosoc_v["10-moddecl"].append("    output reg LED1, LED2, TX,")
 icosoc_v["10-moddecl"].append("")
 
-iowires |= set("CLKIN GRESET RX TX LED1 LED2 LED3 LED4".split())
+iowires |= set("CLKIN RX TX LED1 LED2".split())
 
 icosoc_v["12-iopins"].append("")
 
-icosoc_v["15-moddecl"].append("    // SRAM Interface")
-icosoc_v["15-moddecl"].append("    output SRAM_A0, SRAM_A1, SRAM_A2, SRAM_A3, SRAM_A4, SRAM_A5, SRAM_A6, SRAM_A7,")
-icosoc_v["15-moddecl"].append("    output SRAM_A8, SRAM_A9, SRAM_A10, SRAM_A11, SRAM_A12, SRAM_A13, SRAM_A14, SRAM_A15,")
-icosoc_v["15-moddecl"].append("    output SRAM_A16, SRAM_A17,")
+icosoc_v["15-moddecl"].append("    // SDRAM Interface")
 
-icosoc_v["15-moddecl"].append("    inout SRAM_D0, SRAM_D1, SRAM_D2, SRAM_D3, SRAM_D4, SRAM_D5, SRAM_D6, SRAM_D7,")
-icosoc_v["15-moddecl"].append("    inout SRAM_D8, SRAM_D9, SRAM_D10, SRAM_D11, SRAM_D12, SRAM_D13, SRAM_D14, SRAM_D15,")
-icosoc_v["15-moddecl"].append("    output SRAM_CE, SRAM_WE, SRAM_OE, SRAM_LB, SRAM_UB")
+icosoc_v["15-moddecl"].append("    output SDRAM_A0, SDRAM_A1, SDRAM_A2, SDRAM_A3, SDRAM_A4, SDRAM_A5, SDRAM_A6, SDRAM_A7,")
+icosoc_v["15-moddecl"].append("    output SDRAM_A8, SDRAM_A9, SDRAM_A10, SDRAM_A11,")
+
+icosoc_v["15-moddecl"].append("    inout SDRAM_D0, SDRAM_D1, SDRAM_D2, SDRAM_D3, SDRAM_D4, SDRAM_D5, SDRAM_D6, SDRAM_D7,")
+icosoc_v["15-moddecl"].append("    inout SDRAM_D8, SDRAM_D9, SDRAM_D10, SDRAM_D11, SDRAM_D12, SDRAM_D13, SDRAM_D14, SDRAM_D15,")
+icosoc_v["15-moddecl"].append("    output SDRAM_CLK, SDRAM_CKE, SDRAM_CS, SDRAM_RAS, SDRAM_CAS, SDRAM_WE, SDRAM_LB, SDRAM_UB")
 icosoc_v["15-moddecl"].append(");")
 
-iowires |= set("SRAM_A0 SRAM_A1 SRAM_A2 SRAM_A3 SRAM_A4 SRAM_A5 SRAM_A6 SRAM_A7".split())
-iowires |= set("SRAM_A8 SRAM_A9 SRAM_A10 SRAM_A11 SRAM_A12 SRAM_A13 SRAM_A14 SRAM_A15".split())
-iowires |= set("SRAM_D0 SRAM_D1 SRAM_D2 SRAM_D3 SRAM_D4 SRAM_D5 SRAM_D6 SRAM_D7".split())
-iowires |= set("SRAM_D8 SRAM_D9 SRAM_D10 SRAM_D11 SRAM_D12 SRAM_D13 SRAM_D14 SRAM_D15".split())
-iowires |= set("SRAM_CE SRAM_WE SRAM_OE SRAM_LB SRAM_UB".split())
+iowires |= set("SDRAM_A0 SDRAM_A1 SDRAM_A2 SDRAM_A3 SDRAM_A4 SDRAM_A5 SDRAM_A6 SDRAM_A7".split())
+iowires |= set("SDRAM_A8 SDRAM_A9 SDRAM_A10 SDRAM_A11".split())
+iowires |= set("SDRAM_D0 SDRAM_D1 SDRAM_D2 SDRAM_D3 SDRAM_D4 SDRAM_D5 SDRAM_D6 SDRAM_D7".split())
+iowires |= set("SDRAM_D8 SDRAM_D9 SDRAM_D10 SDRAM_D11 SDRAM_D12 SDRAM_D13 SDRAM_D14 SDRAM_D15".split())
+iowires |= set("SDRAM_CLK SDRAM_CKE SDRAM_CS SRAM_RAS SDRAM_CASE SDRAM_WE SDRAM_LB SDRAM_UB".split())
 
 icosoc_v["95-endmod"].append("endmodule")
 
 icosoc_pcf["10-std"].append("""
-set_io CLKIN 129
-set_io GRESET 128
+set_io CLKIN 60
 
-set_io LED1 70
-set_io LED2 67
-set_io LED3 68
-set_io LED4 71
+set_io LED1 55
+set_io LED2 56
 
-set_io RX 88
-set_io TX 85
+set_io RX 62
+set_io TX 61
 
-set_io SRAM_A0  137
-set_io SRAM_A1  138
-set_io SRAM_A2  139
-set_io SRAM_A3  141
-set_io SRAM_A4  142
-set_io SRAM_A5  42
-set_io SRAM_A6  43
-set_io SRAM_A7  44
-set_io SRAM_A8  73
-set_io SRAM_A9  74
-set_io SRAM_A10 75
-set_io SRAM_A11 76
-set_io SRAM_A12 115
-set_io SRAM_A13 116
-set_io SRAM_A14 117
-set_io SRAM_A15 118
-set_io SRAM_A16 119
-set_io SRAM_A17 78
-#set_io SRAM_A18 P8
-
-set_io SRAM_D0  136
-set_io SRAM_D1  135
-set_io SRAM_D2  134
-set_io SRAM_D3  130
-set_io SRAM_D4  125
-set_io SRAM_D5  124
-set_io SRAM_D6  122
-set_io SRAM_D7  121
-set_io SRAM_D8  62
-set_io SRAM_D9  61
-set_io SRAM_D10 60
-set_io SRAM_D11 56
-set_io SRAM_D12 55
-set_io SRAM_D13 48
-set_io SRAM_D14 47
-set_io SRAM_D15 45
-
-set_io SRAM_CE  23
-set_io SRAM_WE  120
-set_io SRAM_OE  29
-set_io SRAM_LB  24
-set_io SRAM_UB  28
+set_io SDRAM_CLK      129
+set_io SDRAM_CKE      128
+set_io SDRAM_CS       113
+set_io SDRAM_RAS      112
+set_io SDRAM_CAS      110
+set_io SDRAM_WE       107
+set_io SDRAM_UB       94
+set_io SDRAM_LB       93
+#
+set_io SDRAM_A0 117
+set_io SDRAM_A1 119
+set_io SDRAM_A2 121
+set_io SDRAM_A3 124
+set_io SDRAM_A4 130
+set_io SDRAM_A5 125
+set_io SDRAM_A6 122
+set_io SDRAM_A7 120
+set_io SDRAM_A8 118
+set_io SDRAM_A9 116
+set_io SDRAM_A10 115
+set_io SDRAM_A11 114
+#
+set_io SDRAM_D0 78
+set_io SDRAM_D1 79
+set_io SDRAM_D2 80
+set_io SDRAM_D3 81
+set_io SDRAM_D4 82
+set_io SDRAM_D5 83
+set_io SDRAM_D6 84
+set_io SDRAM_D7 85
+set_io SDRAM_D8 87
+set_io SDRAM_D9 88
+set_io SDRAM_D10 90
+set_io SDRAM_D11 91
+set_io SDRAM_D12 95
+set_io SDRAM_D13 96
+set_io SDRAM_D14 97
+set_io SDRAM_D15 98
 
 """)
 
@@ -822,6 +765,10 @@ icosoc_ys["10-readvlog"].append("read_verilog -D ICOSOC %s/common/sync_reset.v" 
 icosoc_ys["10-readvlog"].append("read_verilog -D ICOSOC %s/common/uart_rx.v" % basedir)
 icosoc_ys["10-readvlog"].append("read_verilog -D ICOSOC %s/common/uart_tx.v" % basedir)
 icosoc_ys["10-readvlog"].append("read_verilog -D ICOSOC %s/common/sync_dd_c.v" % basedir)
+icosoc_ys["10-readvlog"].append("read_verilog -D ICOSOC %s/common/sdram.v" % basedir)
+icosoc_ys["10-readvlog"].append("read_verilog -D ICOSOC %s/common/wbsdram.v" % basedir)
+icosoc_ys["10-readvlog"].append("read_verilog -D ICOSOC %s/common/iceioddr.v" % basedir)
+icosoc_ys["10-readvlog"].append("read_verilog -D ICOSOC %s/common/genuctrl.v" % basedir)
 icosoc_ys["10-readvlog"].append("read_verilog -D ICOSOC %s/common/picorv32.v" % basedir)
 icosoc_ys["10-readvlog"].append("read_verilog -D ICOSOC %s/common/icosoc_debugger.v" % basedir)
 icosoc_ys["50-synthesis"].append("synth_ice40 -top icosoc -blif icosoc.blif")
