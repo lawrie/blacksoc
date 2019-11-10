@@ -346,16 +346,19 @@ icosoc_v["30-sdramif"].append("""
     // -------------------------------
     // SDRAM Interface
 
+    wire sdram_ready;
+    wire [31:0] sdram_rdata;
+
     sdram #(.CLOCK_FREQ_HZ(20000000)
         ) sdram_memory (
                 .clk            (clk            ),
                 .resetn         (resetn         ),
-                .mem_valid      (mem_valid && mem_addr < 4*MEM_WORDS),
+                .mem_valid      ((mem_addr & 32'hF000_0000) == 32'h0000_0000 && (mem_addr >> 2) >= BOOT_MEM_SIZE),
                 .mem_addr       (mem_addr       ),
                 .mem_wdata      (mem_wdata      ),
-                .mem_rdata      (ram_rdata      ),
+                .mem_rdata      (sdram_rdata    ),
                 .mem_wstrb      (mem_wstrb      ),
-                .mem_ready      (ram_ready      ),
+                .mem_ready      (sdram_ready    ),
                 .o_ram_clk      (SDRAM_CLK      ),
                 .o_ram_cke      (SDRAM_CKE      ),
                 .o_ram_cs_n     (SDRAM_CS       ),
@@ -554,8 +557,8 @@ icosoc_v["72-bus"].append("""
         rx_ready <= 0;
        
         if (!resetn) begin
-            LED1 <= 0;
-            LED2 <= 0;
+            LED1 <= 1;
+            LED2 <= 1;
 
         end else
         if (mem_valid && !mem_ready) begin
@@ -573,13 +576,17 @@ icosoc_v["72-bus"].append("""
                     mem_ready <= 1;
                 end
                 (mem_addr & 32'hF000_0000) == 32'h0000_0000 && (mem_addr >> 2) >= BOOT_MEM_SIZE: begin
+                    if (sdram_ready) begin
+                        mem_ready <= 1;
+                        if (mem_wstrb) mem_rdata <= sdram_rdata;
+                    end
                 end
                 (mem_addr & 32'hF000_0000) == 32'h2000_0000: begin
                     mem_ready <= 1;
                     mem_rdata <= 0;
                     if (mem_wstrb) begin
                         if (mem_addr[23:16] == 0) begin
-                            if (mem_addr[7:0] == 8'h 00) {LED2, LED1} <= mem_wdata;
+                            if (mem_addr[7:0] == 8'h 00) {LED2, LED1} <= ~mem_wdata;
                         end
 """)
 
@@ -587,9 +594,9 @@ icosoc_v["74-bus"].append("""
                     end else begin
                         if (mem_addr[23:16] == 0) begin
 `ifdef TESTBENCH
-                            if (mem_addr[7:0] == 8'h 00) mem_rdata <= {LED2, LED1} | 32'h8000_0000;
+                            if (mem_addr[7:0] == 8'h 00) mem_rdata <= ~{LED2, LED1} | 32'h8000_0000;
 `else
-                            if (mem_addr[7:0] == 8'h 00) mem_rdata <= {LED2, LED1};
+                            if (mem_addr[7:0] == 8'h 00) mem_rdata <= ~{LED2, LED1};
 `endif
                         end
 """)
@@ -655,8 +662,8 @@ set_io CLKIN 60
 set_io LED1 55
 set_io LED2 56
 
-set_io RX 62
-set_io TX 61
+set_io RX 61
+set_io TX 62
 
 set_io SDRAM_CLK      129
 set_io SDRAM_CKE      128
@@ -747,8 +754,8 @@ icosoc_mk["10-top"].append("\tcat icosoc.bin >/dev/ttyACM0")
 icosoc_mk["10-top"].append("")
 icosoc_mk["10-top"].append("run: icosoc.bin appimage.hex")
 icosoc_mk["10-top"].append("\tcat icosoc.bin >/dev/ttyACM0")
-icosoc_mk["10-top"].append("\tstty -F /dev/ttyUSB0 -echo raw 115200")
-icosoc_mk["10-top"].append("\tsleep 2;cat appimage.hex ../../common/zero.bin >/dev/ttyUSB0")
+icosoc_mk["10-top"].append("\tstty -F /dev/ttyACM0 -echo raw 115200")
+icosoc_mk["10-top"].append("\tsleep 2;cat appimage.hex ../../common/zero.bin >/dev/ttyACM0")
 icosoc_mk["10-top"].append("")
 icosoc_mk["10-top"].append("softrun: appimage.hex")
 icosoc_mk["10-top"].append("\tcat icosoc.bin >/dev/ttyACM0")
