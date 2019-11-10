@@ -331,7 +331,7 @@ icosoc_v["20-clockgen"].append("""
     // -------------------------------
     // Reset Generator
 
-    reg [10:0] resetn_counter = 0;
+    reg [12:0] resetn_counter = 0;
     wire resetn = &resetn_counter;
 
     always @(posedge clk) begin
@@ -353,7 +353,7 @@ icosoc_v["30-sdramif"].append("""
         ) sdram_memory (
                 .clk            (clk            ),
                 .resetn         (resetn         ),
-                .mem_valid      ((mem_addr & 32'hF000_0000) == 32'h0000_0000 && (mem_addr >> 2) >= BOOT_MEM_SIZE),
+                .mem_valid      (mem_valid &&((mem_addr & 32'hF000_0000) == 32'h0000_0000 && (mem_addr >> 2) >= BOOT_MEM_SIZE) && !sdram_ready && !mem_ready),
                 .mem_addr       (mem_addr       ),
                 .mem_wdata      (mem_wdata      ),
                 .mem_rdata      (sdram_rdata    ),
@@ -366,8 +366,8 @@ icosoc_v["30-sdramif"].append("""
                 .o_ram_ras_n    (SDRAM_RAS      ),
                 .o_ram_we_n     (SDRAM_WE       )  ,
                 .o_ram_addr     ({SDRAM_A11, SDRAM_A10, SDRAM_A9, SDRAM_A8, SDRAM_A7, SDRAM_A6, SDRAM_A5, SDRAM_A4, SDRAM_A3, SDRAM_A2, SDRAM_A1, SDRAM_A0}),
-                .o_ram_udqm     (SDRAM_UB     ),
-                .o_ram_ldqm     (SDRAM_LB     ),
+                .o_ram_udqm     (SDRAM_UB       ),
+                .o_ram_ldqm     (SDRAM_LB       ),
                 .io_ram_data    ({SDRAM_D15, SDRAM_D14, SDRAM_D13, SDRAM_D12, SDRAM_D11, SDRAM_D10, SDRAM_D9, SDRAM_D8, SDRAM_D7, SDRAM_D6, SDRAM_D5, SDRAM_D4, SDRAM_D3, SDRAM_D2, SDRAM_D1, SDRAM_D0} )
         );
 
@@ -386,7 +386,7 @@ icosoc_v["30-uart"].append("""
 
     uart_rx #(.BAUD(115200)) u_uart_rx (
         .clk (clk),
-        .reset_(1),
+        .reset_(resetn),
         .rx_req(rx_req),
         .rx_ready(rx_ready),
         .rx_data(rx_data),
@@ -400,7 +400,7 @@ icosoc_v["30-uart"].append("""
     // right value.
     uart_tx #(.BAUD(115200)) u_uart_tx (
         .clk (clk),
-        .reset_(1),
+        .reset_(resetn),
         .tx_req(tx_req),
         .tx_ready(tx_ready),
         .tx_data(tx_data),
@@ -537,6 +537,9 @@ icosoc_v["70-bus"].append("""
     // -------------------------------
     // Memory/IO Interface
 
+    reg [31:0] leds;
+    assign {LED2, LED1} = ~leds;
+
     localparam BOOT_MEM_SIZE = 1024;
     reg [31:0] memory [0:BOOT_MEM_SIZE-1];
 `ifdef TESTBENCH
@@ -557,8 +560,7 @@ icosoc_v["72-bus"].append("""
         rx_ready <= 0;
        
         if (!resetn) begin
-            LED1 <= 1;
-            LED2 <= 1;
+            leds <= 0;
 
         end else
         if (mem_valid && !mem_ready) begin
@@ -578,7 +580,7 @@ icosoc_v["72-bus"].append("""
                 (mem_addr & 32'hF000_0000) == 32'h0000_0000 && (mem_addr >> 2) >= BOOT_MEM_SIZE: begin
                     if (sdram_ready) begin
                         mem_ready <= 1;
-                        if (mem_wstrb) mem_rdata <= sdram_rdata;
+                        if (!mem_wstrb) mem_rdata <= sdram_rdata;
                     end
                 end
                 (mem_addr & 32'hF000_0000) == 32'h2000_0000: begin
@@ -586,7 +588,7 @@ icosoc_v["72-bus"].append("""
                     mem_rdata <= 0;
                     if (mem_wstrb) begin
                         if (mem_addr[23:16] == 0) begin
-                            if (mem_addr[7:0] == 8'h 00) {LED2, LED1} <= ~mem_wdata;
+                            if (mem_addr[7:0] == 8'h 00) leds <= mem_wdata;
                         end
 """)
 
@@ -594,9 +596,9 @@ icosoc_v["74-bus"].append("""
                     end else begin
                         if (mem_addr[23:16] == 0) begin
 `ifdef TESTBENCH
-                            if (mem_addr[7:0] == 8'h 00) mem_rdata <= ~{LED2, LED1} | 32'h8000_0000;
+                            if (mem_addr[7:0] == 8'h 00) mem_rdata <= leds | 32'h8000_0000;
 `else
-                            if (mem_addr[7:0] == 8'h 00) mem_rdata <= ~{LED2, LED1};
+                            if (mem_addr[7:0] == 8'h 00) mem_rdata <= leds;
 `endif
                         end
 """)
